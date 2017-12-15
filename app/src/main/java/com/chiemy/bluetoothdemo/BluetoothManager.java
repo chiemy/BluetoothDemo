@@ -2,17 +2,16 @@ package com.chiemy.bluetoothdemo;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothServerSocket;
-import android.bluetooth.BluetoothSocket;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.widget.Toast;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -63,16 +62,45 @@ public class BluetoothManager {
 
     private Map<String, BluetoothDeviceConnector> mConnectorMap;
 
+    private BluetoothServer mServer;
+
     private Handler mUIHandler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(Message msg) {
+            Bundle bundle = msg.getData();
             switch (msg.what) {
                 case BluetoothConstants.MSG_READ:
                     byte[] data = (byte[]) msg.obj;
+                    String readMessage = new String(data, 0, msg.arg1);
+                    String address = null;
+                    if (bundle != null) {
+                        address = bundle.getString(BluetoothConstants.KEY_MAC_ADDRES);
+                    }
+                    Toast.makeText(mContext, address + " : " + readMessage, Toast.LENGTH_SHORT).show();
                     break;
                 case BluetoothConstants.MSG_CANCEL_DISCOVERY:
                     if (mDeviceDiscoveryListener != null) {
                         mDeviceDiscoveryListener.onBluetoothDeviceDiscoveryCancel();
+                    }
+                    break;
+                case BluetoothConstants.MSG_CONNECTED:
+                    if (mConnectionListeners != null) {
+                        int size = mConnectionListeners.size();
+                        for (int i = 0; i < size; i++) {
+                            mConnectionListeners.get(i).onConnectStateChanged(true);
+                        }
+                    }
+                    break;
+                case BluetoothConstants.MSG_CONNECT_FAILED:
+                    Throwable error = null;
+                    if (bundle != null) {
+                        error = (Throwable) bundle.getSerializable(BluetoothConstants.KEY_ERROR);
+                    }
+                    if (mConnectionListeners != null) {
+                        int size = mConnectionListeners.size();
+                        for (int i = 0; i < size; i++) {
+                            mConnectionListeners.get(i).onConnectFailed(error);
+                        }
                     }
                     break;
             }
@@ -89,6 +117,9 @@ public class BluetoothManager {
 
         mUUID = UUID.fromString(BluetoothConstants.UUID_NAME);
         mConnectorMap = new HashMap<>(2);
+
+        mServer = new BluetoothServer(mUUID, mUIHandler);
+        mServer.accept();
     }
 
     public static BluetoothManager getInstance() throws IllegalArgumentException {
@@ -201,10 +232,10 @@ public class BluetoothManager {
         String macAddress = device.getAddress();
         BluetoothDeviceConnector connector = mConnectorMap.get(macAddress);
         if (connector == null) {
-            connector = new BluetoothDeviceConnector(device, mUUID, mUIHandler);
+            connector = new BluetoothDeviceConnector(mUIHandler);
             mConnectorMap.put(macAddress, connector);
         }
-        connector.connect();
+        connector.connect(macAddress, mUUID);
     }
 
     public void disconnected(BluetoothDevice device) {
@@ -231,6 +262,16 @@ public class BluetoothManager {
         if (mBluetoothDiscoverer != null) {
             mBluetoothDiscoverer.release();
         }
+        mServer.release();
+
+        if (mConnectorMap != null) {
+            for(BluetoothDeviceConnector connector : mConnectorMap.values()) {
+                if (connector != null) {
+                    connector.cancel();
+                }
+            }
+        }
+
         instance = null;
     }
 
@@ -259,6 +300,8 @@ public class BluetoothManager {
      */
     public interface OnConnectionListener {
         void onConnectStateChanged(boolean connected);
+
+        void onConnectFailed(Throwable error);
     }
 
     public enum Status {
@@ -280,62 +323,4 @@ public class BluetoothManager {
         Connected
     }
 
-    private class AcceptThread extends Thread {
-        private final BluetoothServerSocket mmServerSocket;
-        private List<BluetoothSocketProxy> mBluetoothSocketList;
-
-        public AcceptThread() {
-            // Use a temporary object that is later assigned to mmServerSocket,
-            // because mmServerSocket is final
-            BluetoothServerSocket tmp = null;
-            try {
-                // MY_UUID is the app's UUID string, also used by the client code
-                tmp = mBluetoothAdapter.listenUsingRfcommWithServiceRecord("", mUUID);
-            } catch (IOException e) {
-
-            }
-            mmServerSocket = tmp;
-            mBluetoothSocketList = new ArrayList<>(2);
-        }
-
-        public void run() {
-            BluetoothSocket socket = null;
-            // Keep listening until exception occurs or a socket is returned
-            while (true) {
-                try {
-                    socket = mmServerSocket.accept();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                // If a connection was accepted
-                if (socket != null) {
-                    // Do work to manage the connection (in a separate thread)
-                    BluetoothSocketProxy bluetoothSocketWrapper = new BluetoothSocketProxy(
-                            socket,
-                            mUIHandler
-                    );
-                    bluetoothSocketWrapper.readInNewThread();
-                    mBluetoothSocketList.add(bluetoothSocketWrapper);
-                }
-            }
-        }
-
-        /* Call this from the main activity to send data to the remote device */
-        public void write(byte[] bytes) {
-            int size = mBluetoothSocketList.size();
-            for (int i = 0; i < size; i++) {
-                mBluetoothSocketList.get(i).write(bytes);
-            }
-        }
-
-        /**
-         * Will cancel the listening socket, and cause the thread to finish
-         */
-        public void cancel() {
-            try {
-                mmServerSocket.close();
-            } catch (IOException e) {
-            }
-        }
-    }
 }

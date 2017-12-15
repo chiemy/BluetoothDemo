@@ -2,6 +2,7 @@ package com.chiemy.bluetoothdemo;
 
 import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 
@@ -55,5 +56,14 @@ public final class BluetoothUtil {
                 && context != null
                 && context.getPackageManager()
                 .hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE);
+    }
+
+    public static void ensureDiscoverable(Context context) {
+        if (BluetoothAdapter.getDefaultAdapter().getScanMode() !=
+                BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) {
+            Intent discoverableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+            discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+            context.startActivity(discoverableIntent);
+        }
     }
 }

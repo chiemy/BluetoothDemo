@@ -1,8 +1,11 @@
 package com.chiemy.bluetoothdemo;
 
+import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.os.Bundle;
 import android.os.Handler;
+import android.os.Message;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -14,66 +17,50 @@ import java.util.UUID;
  */
 
 public class BluetoothDeviceConnector implements Runnable {
-    private final BluetoothSocketProxy mSocket;
-    private final BluetoothDevice mmDevice;
+    private BluetoothSocketProxy mSocket;
+    private BluetoothSocket mBluetoothSocket;
+    private BluetoothDevice mmDevice;
 
     private boolean mIsConnecting;
+    private boolean mIsConnected;
 
-    public BluetoothDeviceConnector(BluetoothDevice device,
-                                    UUID uuid,
-                                    Handler uiHandler) {
+    private Handler mUIHandler;
+
+
+    public BluetoothDeviceConnector(Handler uiHandler) {
+        mUIHandler = uiHandler;
+    }
+
+    public void connect(String address, UUID uuid) {
+        if (!mIsConnected
+                && !mIsConnecting) {
+            mIsConnecting = true;
+            createSocket(address, uuid);
+
+            new Thread(this).start();
+        }
+    }
+
+    private void createSocket(String address, UUID uuid) {
+        mmDevice = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(address);
         // Use a temporary object that is later assigned to mSocket,
         // because mSocket is final
         BluetoothSocket tmp = null;
         try {
-            tmp = device.createRfcommSocketToServiceRecord(uuid);
+            tmp = mmDevice.createInsecureRfcommSocketToServiceRecord(uuid);
         } catch (IOException e) {
             e.printStackTrace();
         }
-        mmDevice = device;
-        mSocket = new BluetoothSocketProxy(tmp, uiHandler);
+        mBluetoothSocket = tmp;
+        mSocket = new BluetoothSocketProxy(mBluetoothSocket, mUIHandler);
     }
 
     public BluetoothDevice getDevice() {
         return mmDevice;
     }
 
-    public void connect() {
-        if (!isConnected()
-                && !mIsConnecting) {
-            mIsConnecting = true;
-            new Thread(this).start();
-        }
-    }
-
     public boolean isConnected() {
-        return mSocket.getBluetoothSocket().isConnected();
-    }
-
-    @Override
-    public void run() {
-        try {
-            // Connect the device through the socket. This will block
-            // until it succeeds or throws an exception
-            mSocket.connect();
-        } catch (IOException connectException) {
-            // Unable to connect; close the socket and get out
-            try {
-                mSocket.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            return;
-        } finally {
-            mIsConnecting = false;
-        }
-
-        // Do work to manage the connection (in a separate thread)
-        startRead();
-    }
-
-    private void startRead() {
-        mSocket.read();
+        return mIsConnected;
     }
 
     /* Call this from the main activity to send data to the remote device */
@@ -85,10 +72,43 @@ public class BluetoothDeviceConnector implements Runnable {
      * Will cancel an in-progress connection, and close the socket
      */
     public void cancel() {
-        try {
-            mSocket.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+        mIsConnected = false;
+        if (mSocket != null) {
+            try {
+                mSocket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
+    }
+
+    @Override
+    public void run() {
+        try {
+            // Connect the device through the socket. This will block
+            // until it succeeds or throws an exception
+            mSocket.connect();
+            mIsConnected = true;
+            mUIHandler.sendEmptyMessage(BluetoothConstants.MSG_CONNECTED);
+            write("hello".getBytes());
+        } catch (IOException connectException) {
+            // Unable to connect; close the socket and get out
+            try {
+                mSocket.close();
+            } catch (IOException io) {
+            }
+
+            Message msg = mUIHandler.obtainMessage(BluetoothConstants.MSG_CONNECT_FAILED);
+            Bundle bundle = new Bundle(1);
+            bundle.putSerializable(BluetoothConstants.KEY_ERROR, connectException);
+            msg.setData(bundle);
+            msg.sendToTarget();
+            return;
+        } finally {
+            mIsConnecting = false;
+        }
+
+        // Do work to manage the connection (in a separate thread)
+        mSocket.read();
     }
 }

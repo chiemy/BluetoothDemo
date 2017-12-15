@@ -1,10 +1,11 @@
 package com.chiemy.bluetoothdemo;
 
 import android.bluetooth.BluetoothSocket;
+import android.os.Bundle;
 import android.os.Handler;
+import android.os.Message;
 import android.support.annotation.WorkerThread;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -22,8 +23,11 @@ public class BluetoothSocketProxy {
     private boolean mCanceled;
     private Handler mHandler;
 
+    private String mMacAddress;
+
     public BluetoothSocketProxy(BluetoothSocket socket, Handler uiHandler) {
         mBluetoothSocket = socket;
+        mMacAddress = socket.getRemoteDevice().getAddress();
         InputStream mTmpIs = null;
         OutputStream mTmpOs = null;
 
@@ -58,21 +62,23 @@ public class BluetoothSocketProxy {
 
     @WorkerThread
     public void read() {
+        byte[] buffer = new byte[1024];
+        int bytes;
+
         while (!mCanceled) {
             try {
                 // Read from the InputStream
-                int read;
-                byte[] buffer = new byte[1024];
-                ByteArrayOutputStream data = new ByteArrayOutputStream();
-                while ((read = mInStream.read(buffer)) > 0) {
-                    data.write(buffer, 0, read);
-                }
+                bytes = mInStream.read(buffer);
+
                 // Send the obtained bytes to the UI activity
-                mHandler
-                        .obtainMessage(BluetoothConstants.MSG_READ, data.toByteArray())
-                        .sendToTarget();
+                Message msg
+                        = mHandler.obtainMessage(BluetoothConstants.MSG_READ, bytes, -1, buffer);
+                Bundle bundle = new Bundle(1);
+                bundle.putString(BluetoothConstants.KEY_MAC_ADDRES, mMacAddress);
+                msg.setData(bundle);
+                msg.sendToTarget();
             } catch (IOException e) {
-                break;
+                e.printStackTrace();
             }
         }
     }

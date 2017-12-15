@@ -1,6 +1,8 @@
 package com.chiemy.bluetoothdemo;
 
 import android.bluetooth.BluetoothDevice;
+import android.os.Parcel;
+import android.os.Parcelable;
 
 import java.util.Arrays;
 
@@ -10,7 +12,7 @@ import java.util.Arrays;
  * Description:
  */
 
-public class BluetoothDeviceWrapper {
+public class BluetoothDeviceWrapper implements Parcelable {
     private BluetoothDevice mDevice;
     private int mRssi;
     private byte[] mScanRecord;
@@ -23,6 +25,12 @@ public class BluetoothDeviceWrapper {
         mDevice = device;
         mRssi = rssi;
         mScanRecord = scanRecord;
+    }
+
+    protected BluetoothDeviceWrapper(Parcel in) {
+        mDevice = in.readParcelable(BluetoothDevice.class.getClassLoader());
+        mRssi = in.readInt();
+        mScanRecord = in.createByteArray();
     }
 
     public BluetoothDevice getDevice() {
@@ -59,5 +67,30 @@ public class BluetoothDeviceWrapper {
                 ", mRssi=" + mRssi +
                 ", mScanRecord=" + Arrays.toString(mScanRecord) +
                 '}';
+    }
+
+    public static final Creator<BluetoothDeviceWrapper> CREATOR = new
+            Creator<BluetoothDeviceWrapper>() {
+                @Override
+                public BluetoothDeviceWrapper createFromParcel(Parcel in) {
+                    return new BluetoothDeviceWrapper(in);
+                }
+
+                @Override
+                public BluetoothDeviceWrapper[] newArray(int size) {
+                    return new BluetoothDeviceWrapper[size];
+                }
+            };
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeParcelable(mDevice, flags);
+        dest.writeInt(mRssi);
+        dest.writeByteArray(mScanRecord);
     }
 }
