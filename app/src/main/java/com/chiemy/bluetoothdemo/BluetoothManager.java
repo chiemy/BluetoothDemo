@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.util.Log;
 import android.widget.Toast;
 
 import java.util.ArrayList;
@@ -45,9 +46,7 @@ public class BluetoothManager {
 
     private OnBluetoothDeviceDiscoveryListener mDeviceDiscoveryListener;
 
-    private List<BluetoothDevice> mBluetoothDevices;
-
-    private boolean mRegisterStateReceiver;
+    private boolean mRegisterReceiver;
 
     /**
      * 开启蓝牙后是否开始扫描
@@ -76,7 +75,8 @@ public class BluetoothManager {
                     if (bundle != null) {
                         address = bundle.getString(BluetoothConstants.KEY_MAC_ADDRES);
                     }
-                    Toast.makeText(mContext, address + " : " + readMessage, Toast.LENGTH_SHORT).show();
+                    Toast.makeText(mContext, address + " : " + readMessage, Toast.LENGTH_SHORT)
+                            .show();
                     break;
                 case BluetoothConstants.MSG_CANCEL_DISCOVERY:
                     if (mDeviceDiscoveryListener != null) {
@@ -84,10 +84,24 @@ public class BluetoothManager {
                     }
                     break;
                 case BluetoothConstants.MSG_CONNECTED:
+                    BluetoothDevice conDevice = bundle.getParcelable(BluetoothConstants.KEY_DEVICE);
                     if (mConnectionListeners != null) {
                         int size = mConnectionListeners.size();
                         for (int i = 0; i < size; i++) {
-                            mConnectionListeners.get(i).onConnectStateChanged(true);
+                            mConnectionListeners.get(i).onConnected(conDevice);
+                        }
+                    }
+                    break;
+                case BluetoothConstants.MSG_DISCONNECTED:
+                    BluetoothDevice disConDevice = bundle.getParcelable(BluetoothConstants
+                            .KEY_DEVICE);
+                    boolean initiative = bundle.getBoolean(BluetoothConstants
+                            .KEY_DISCON_INITIATIVE);
+                    Toast.makeText(mContext, "连接断开", Toast.LENGTH_SHORT).show();
+                    if (mConnectionListeners != null) {
+                        int size = mConnectionListeners.size();
+                        for (int i = 0; i < size; i++) {
+                            mConnectionListeners.get(i).onDisconnected(disConDevice, initiative);
                         }
                     }
                     break;
@@ -113,7 +127,6 @@ public class BluetoothManager {
             throw new IllegalArgumentException("Device does not support Bluetooth");
         }
         mConnectionListeners = new ArrayList<>(2);
-        mBluetoothDevices = new ArrayList<>(2);
 
         mUUID = UUID.fromString(BluetoothConstants.UUID_NAME);
         mConnectorMap = new HashMap<>(2);
@@ -135,16 +148,31 @@ public class BluetoothManager {
 
     public BluetoothManager init(Context context) {
         mContext = context.getApplicationContext();
-        registerStateReceiver();
+        registerReceiver();
         return this;
     }
 
-    private void registerStateReceiver() {
-        if (!mRegisterStateReceiver) {
-            IntentFilter filter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
-            mContext.registerReceiver(mStateReceiver, filter);
-            mRegisterStateReceiver = true;
+    private void registerReceiver() {
+        if (!mRegisterReceiver) {
+            registerStateReceiver();
+            registerConnectionReceiver();
         }
+    }
+
+    private void registerStateReceiver() {
+        IntentFilter filter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+        mContext.registerReceiver(mStateReceiver, filter);
+    }
+
+    private void registerConnectionReceiver() {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
+        filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
+        filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+        filter.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
+        mContext.registerReceiver(mConnectionReceiver, filter);
+
+        mContext.registerReceiver(new ConnectionReceiver(), filter);
     }
 
     public void setDiscoveryRuleConfig(DiscoveryRuleConfig discoveryRuleConfig) {
@@ -205,16 +233,14 @@ public class BluetoothManager {
     }
 
     private void getDiscoverer() {
+        DiscoveryType type = DiscoveryType.Classic;
         if (mDiscoveryRuleConfig != null) {
-            if (mDiscoveryRuleConfig.getType() == DiscoveryType.Classic) {
-                mBluetoothDiscoverer = BluetoothClassicDiscoverer.getInstance(mContext);
-            } else if (mDiscoveryRuleConfig.getType() == DiscoveryType.BLE) {
-                mBluetoothDiscoverer = BluetoothLeDiscoverer.getInstance();
-            } else if (mDiscoveryRuleConfig.getType() == DiscoveryType.All){
-                mBluetoothDiscoverer = BluetoothAllDiscoverer.getInstance(mContext);
-            }
-        } else {
+            type = mDiscoveryRuleConfig.getType();
+        }
+        if (type == DiscoveryType.Classic) {
             mBluetoothDiscoverer = BluetoothClassicDiscoverer.getInstance(mContext);
+        } else if (type == DiscoveryType.BLE) {
+            mBluetoothDiscoverer = BluetoothLeDiscoverer.getInstance();
         }
         mBluetoothDiscoverer.setDiscoveryListener(mDeviceDiscoveryListener);
         mBluetoothDiscoverer.setDiscoveryRuleConfig(mDiscoveryRuleConfig);
@@ -234,6 +260,7 @@ public class BluetoothManager {
         if (connector == null) {
             connector = new BluetoothDeviceConnector(mUIHandler);
             mConnectorMap.put(macAddress, connector);
+            addConnectionListeners(connector);
         }
         connector.connect(macAddress, mUUID);
     }
@@ -241,7 +268,14 @@ public class BluetoothManager {
     public void disconnected(BluetoothDevice device) {
         BluetoothDeviceConnector connector = mConnectorMap.get(device.getAddress());
         if (connector != null) {
-            connector.cancel();
+            boolean success = connector.cancel();
+            if (success) {
+                Bundle bundle = new Bundle(2);
+                bundle.putParcelable(BluetoothConstants.KEY_DEVICE, device);
+                bundle.putBoolean(BluetoothConstants.KEY_DISCON_INITIATIVE, true);
+
+                sendMessage(BluetoothConstants.MSG_DISCONNECTED, bundle);
+            }
         }
     }
 
@@ -256,8 +290,9 @@ public class BluetoothManager {
     public void release() {
         mDeviceDiscoveryListener = null;
         mConnectionListeners.clear();
-        if (mRegisterStateReceiver) {
+        if (mRegisterReceiver) {
             mContext.unregisterReceiver(mStateReceiver);
+            mContext.unregisterReceiver(mConnectionReceiver);
         }
         if (mBluetoothDiscoverer != null) {
             mBluetoothDiscoverer.release();
@@ -265,7 +300,7 @@ public class BluetoothManager {
         mServer.release();
 
         if (mConnectorMap != null) {
-            for(BluetoothDeviceConnector connector : mConnectorMap.values()) {
+            for (BluetoothDeviceConnector connector : mConnectorMap.values()) {
                 if (connector != null) {
                     connector.cancel();
                 }
@@ -286,7 +321,7 @@ public class BluetoothManager {
                         startDiscovery();
                     }
                     break;
-                case BluetoothAdapter.STATE_DISCONNECTED:
+                case BluetoothAdapter.STATE_OFF:
 
                     break;
                 default:
@@ -295,11 +330,49 @@ public class BluetoothManager {
         }
     };
 
+    private final BroadcastReceiver mConnectionReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+            Bundle bundle = new Bundle(1);
+            bundle.putParcelable(BluetoothConstants.KEY_DEVICE, device);
+
+            int what = -1;
+            Log.d("chiemy", "onReceive: " + action);
+            if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
+                what = BluetoothConstants.MSG_CONNECTED;
+            } else if (BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED.equals(action)) {
+                //Device is about to disconnect
+            } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
+                //Device has disconnected
+                what = BluetoothConstants.MSG_DISCONNECTED;
+            } else if (BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED.equals(action)) {
+                int state = intent.getIntExtra(BluetoothAdapter.EXTRA_CONNECTION_STATE, 0);
+                if (state == BluetoothAdapter.STATE_CONNECTED) {
+                    what = BluetoothConstants.MSG_CONNECTED;
+                } else if (state == BluetoothAdapter.STATE_DISCONNECTED) {
+                    what = BluetoothConstants.MSG_DISCONNECTED;
+                }
+            }
+
+            sendMessage(what, bundle);
+        }
+    };
+
+    private void sendMessage(int what, Bundle data) {
+        Message msg = mUIHandler.obtainMessage(what);
+        msg.setData(data);
+        msg.sendToTarget();
+    }
+
     /**
      * 连接状态监听
      */
     public interface OnConnectionListener {
-        void onConnectStateChanged(boolean connected);
+        void onConnected(BluetoothDevice device);
+
+        void onDisconnected(BluetoothDevice device, boolean initiative);
 
         void onConnectFailed(Throwable error);
     }

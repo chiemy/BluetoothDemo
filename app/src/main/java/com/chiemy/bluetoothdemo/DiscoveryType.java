@@ -9,5 +9,4 @@ package com.chiemy.bluetoothdemo;
 public enum DiscoveryType {
     Classic,
     BLE,
-    All
 }

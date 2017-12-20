@@ -30,6 +30,7 @@ public class BluetoothServer implements Runnable {
         mUIHandler = uiHandler;
         mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         mUUID = uuid;
+        mBluetoothSocketList = new ArrayList<>(2);
     }
 
     private void createSocket() {
@@ -40,10 +41,9 @@ public class BluetoothServer implements Runnable {
             // MY_UUID is the app's UUID string, also used by the client code
             tmp = mBluetoothAdapter.listenUsingRfcommWithServiceRecord("hotbody", mUUID);
         } catch (IOException e) {
-
+            e.printStackTrace();
         }
         mmServerSocket = tmp;
-        mBluetoothSocketList = new ArrayList<>(2);
     }
 
     public void accept() {
@@ -71,6 +71,7 @@ public class BluetoothServer implements Runnable {
             try {
                 mmServerSocket.close();
             } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
@@ -95,6 +96,9 @@ public class BluetoothServer implements Runnable {
                 );
                 bluetoothSocketProxy.readInNewThread();
                 bluetoothSocketProxy.write("hello".getBytes());
+                if (mBluetoothSocketList.contains(bluetoothSocketProxy)) {
+                    mBluetoothSocketList.remove(bluetoothSocketProxy);
+                }
                 mBluetoothSocketList.add(bluetoothSocketProxy);
             }
         }

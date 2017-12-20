@@ -98,4 +98,20 @@ public class BluetoothSocketProxy {
         mCanceled = true;
         mBluetoothSocket.close();
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        BluetoothSocketProxy that = (BluetoothSocketProxy) o;
+
+        return mMacAddress != null ? mMacAddress.equals(that.mMacAddress) : that.mMacAddress ==
+                null;
+    }
+
+    @Override
+    public int hashCode() {
+        return mMacAddress != null ? mMacAddress.hashCode() : 0;
+    }
 }

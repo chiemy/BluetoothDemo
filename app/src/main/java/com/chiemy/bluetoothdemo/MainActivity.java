@@ -19,6 +19,7 @@ import android.widget.Toast;
 import com.tbruyelle.rxpermissions.RxPermissions;
 
 import java.util.List;
+import java.util.UUID;
 
 import rx.Subscriber;
 
@@ -40,8 +41,10 @@ public class MainActivity extends AppCompatActivity {
         mBluetoothManager = BluetoothManager.getInstance().init(getApplicationContext());
         DiscoveryRuleConfig config = new DiscoveryRuleConfig.Builder()
                 .setTimeout(10_000)
-                .setType(DiscoveryType.Classic)
+                .setType(DiscoveryType.BLE)
+                .setServiceUuids(new UUID[]{BlueBikeSensor.CSC_SERVICE_UUID})
                 .build();
+
         mBluetoothManager.setDiscoveryRuleConfig(config);
         mBluetoothManager.setDeviceDiscoveryListener(new OnBluetoothDeviceDiscoveryListener() {
 

@@ -11,6 +11,7 @@ import android.text.TextUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Created: chiemy
@@ -83,7 +84,11 @@ class BluetoothLeDiscoverer implements BluetoothDiscoverer, BluetoothAdapter.LeS
             return true;
         }
         mDiscovering = true;
-        boolean success = mBluetoothAdapter.startLeScan(this);
+        UUID[] uuids = null;
+        if (mRuleConfig != null) {
+            uuids = mRuleConfig.mUUIDS;
+        }
+        boolean success = mBluetoothAdapter.startLeScan(uuids, this);
         if (!success) {
             mDiscovering = false;
             mUIHandler.sendEmptyMessage(BluetoothConstants.MSG_DISCOVERY_FAILED);

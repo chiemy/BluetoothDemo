@@ -16,7 +16,7 @@ import java.util.UUID;
  * Description: 蓝牙连接器
  */
 
-public class BluetoothDeviceConnector implements Runnable {
+public class BluetoothDeviceConnector implements Runnable, BluetoothManager.OnConnectionListener {
     private BluetoothSocketProxy mSocket;
     private BluetoothSocket mBluetoothSocket;
     private BluetoothDevice mmDevice;
@@ -70,16 +70,20 @@ public class BluetoothDeviceConnector implements Runnable {
 
     /**
      * Will cancel an in-progress connection, and close the socket
+     * @return 之前处于连接状态
      */
-    public void cancel() {
+    public boolean cancel() {
+        boolean success = false;
         mIsConnected = false;
         if (mSocket != null) {
+            success = mSocket.getBluetoothSocket().isConnected();
             try {
                 mSocket.close();
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
+        return success;
     }
 
     @Override
@@ -89,8 +93,8 @@ public class BluetoothDeviceConnector implements Runnable {
             // until it succeeds or throws an exception
             mSocket.connect();
             mIsConnected = true;
-            mUIHandler.sendEmptyMessage(BluetoothConstants.MSG_CONNECTED);
-            write("hello".getBytes());
+
+            // mUIHandler.sendEmptyMessage(BluetoothConstants.MSG_CONNECTED);
         } catch (IOException connectException) {
             // Unable to connect; close the socket and get out
             try {
@@ -110,5 +114,29 @@ public class BluetoothDeviceConnector implements Runnable {
 
         // Do work to manage the connection (in a separate thread)
         mSocket.read();
+    }
+
+    @Override
+    public void onConnected(BluetoothDevice device) {
+        if (isTheDevice(device)) {
+            mIsConnected = true;
+        }
+    }
+
+    @Override
+    public void onDisconnected(BluetoothDevice device, boolean initiative) {
+        if (isTheDevice(device)) {
+            mIsConnected = false;
+        }
+    }
+
+    private boolean isTheDevice(BluetoothDevice device) {
+        return mmDevice != null
+                && device != null
+                && mmDevice.getAddress().equals(device.getAddress());
+    }
+
+    @Override
+    public void onConnectFailed(Throwable error) {
     }
 }

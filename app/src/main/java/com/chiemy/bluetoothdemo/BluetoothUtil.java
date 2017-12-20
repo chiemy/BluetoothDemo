@@ -1,10 +1,13 @@
 package com.chiemy.bluetoothdemo;
 
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+
+import java.lang.reflect.Method;
 
 /**
  * Created: chiemy
@@ -65,5 +68,17 @@ public final class BluetoothUtil {
             discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
             context.startActivity(discoverableIntent);
         }
+    }
+
+    public static boolean unpair(BluetoothDevice pairedDevice) {
+        boolean success = false;
+        try {
+            Method method = pairedDevice.getClass().getMethod("removeBond", (Class[]) null);
+            method.invoke(pairedDevice, (Object[]) null);
+            success = true;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return success;
     }
 }

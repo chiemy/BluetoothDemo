@@ -27,6 +27,12 @@
         </activity>
         <activity android:name=".ConnectActivity">
         </activity>
+
+        <receiver android:name=".ConnectionReceiver">
+            <intent-filter>
+                <action android:name="android.bluetooth.adapter.action.CONNECTION_STATE_CHANGED"/>
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
